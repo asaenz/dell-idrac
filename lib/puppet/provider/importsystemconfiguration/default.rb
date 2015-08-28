@@ -81,7 +81,7 @@ Puppet::Type.type(:importsystemconfiguration).provide(
     attempts = 1
     begin
       yield
-    rescue Puppet::Idrac::Util::ConfigError => e
+    rescue Puppet::Idrac::ConfigError => e
       if attempts == 1
         Puppet.info("Resetting the iDRAC before performing any other operation")
         reset

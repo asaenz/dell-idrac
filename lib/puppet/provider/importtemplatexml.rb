@@ -144,9 +144,26 @@ class Puppet::Provider::Importtemplatexml <  Puppet::Provider
   end
 
   def execute_import(file_name=@resource['configxmlfilename'])
-    props = {'IPAddress'=> @resource['nfsipaddress'], 'ShareName'=> @resource['nfssharepath'], 'ShareType'=> '0', 'FileName'=> file_name, 'ShutdownType'=> '1'}
-    job_id = Puppet::Idrac::Util.wsman_system_config_action(:import, props)
-    wait_for_import(job_id)
+    require 'asm/util'
+    props = {'IPAddress' => @resource[:nfsipaddress] || ASM::Util.get_preferred_ip(@ip),
+             'ShareName' => @resource['nfssharepath'],
+             'ShareType' => '0',
+             'FileName' => file_name,
+             'ShutdownType' => '0'}
+    forced_shutdown = false
+    begin
+      job_id = Puppet::Idrac::Util.wsman_system_config_action(:import, props)
+      wait_for_import(job_id)
+    rescue Puppet::Idrac::ShutdownError
+      if forced_shutdown
+        raise('Server could not be shut down during ImportSystemConfiguration')
+      else
+        Puppet.info("Server could not be shut down gracefully with import.  Forcing shutdown...")
+        forced_shutdown = true
+        props['ShutdownType'] = '1'
+        retry
+      end
+    end
   end
 
   def wait_for_import(instance_id)
@@ -160,7 +177,9 @@ class Puppet::Provider::Importtemplatexml <  Puppet::Provider
         break
       else
         if response  == "Failed"
-          raise(Puppet::Idrac::Util::ConfigError, "ImportSystemConfiguration job failed")
+          raise(Puppet::Idrac::ConfigError, "ImportSystemConfiguration job failed")
+        elsif response.downcase == 'sys051'
+          raise(Puppet::Idrac::ShutdownError, 'System could not be gracefully shut down')
         else
           Puppet.info "Job is running, wait for 1 minute"
           sleep 60
